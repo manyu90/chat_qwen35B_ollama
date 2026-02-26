@@ -11,7 +11,7 @@ Benchmarked on a **MacBook Pro M4 Pro with 48GB unified memory**.
 - **Inference speed**: ~10 tokens/second for chat
 - **Minimum recommended RAM**: 48GB for comfortable usage alongside other apps
 
-The Qwen 3.5 35B model uses a Mixture-of-Experts (MoE) architecture — only ~3.5B parameters are active per token, which is why it runs at decent speed despite the 35B parameter count.
+The Qwen 3.5 35B model uses a Mixture-of-Experts (MoE) architecture with 256 experts, of which only 9 (8 routed + 1 shared) are active per token — resulting in just **3B active parameters** per forward pass out of 35B total (hence the model name `35B-A3B`). This is only 8.6% of total parameters, which is why it runs at decent speed despite the 35B parameter count. The architecture also uses a Gated DeltaNet + MoE design that alternates linear and full attention in a 3:1 ratio, enabling efficient long-context inference.
 
 ## Setup
 
