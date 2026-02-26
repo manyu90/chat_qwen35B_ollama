@@ -2,6 +2,8 @@
 
 A fully local AI chat application powered by Ollama running Qwen 3.5 35B, with a ChatGPT-style interface, persistent conversation memory, and web search capabilities. Zero cloud LLM costs — all inference runs on your machine.
 
+![Chat Interface](assets/chat-screenshot.png)
+
 ## Hardware Requirements
 
 Benchmarked on a **MacBook Pro M4 Pro with 48GB unified memory**.
