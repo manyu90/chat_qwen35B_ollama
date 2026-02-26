@@ -21,6 +21,8 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS conversations (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                summary TEXT DEFAULT '',
+                summary_up_to_index INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS messages (
@@ -34,6 +36,15 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, created_at);
         """)
+        # Add summary columns if upgrading from older schema
+        try:
+            await db.execute("ALTER TABLE conversations ADD COLUMN summary TEXT DEFAULT ''")
+        except Exception:
+            pass  # column already exists
+        try:
+            await db.execute("ALTER TABLE conversations ADD COLUMN summary_up_to_index INTEGER DEFAULT 0")
+        except Exception:
+            pass  # column already exists
         await db.commit()
     finally:
         await db.close()
@@ -45,7 +56,8 @@ async def create_conversation(title: str) -> dict:
     db = await get_db()
     try:
         await db.execute(
-            "INSERT INTO conversations (id, title, created_at) VALUES (?, ?, ?)",
+            "INSERT INTO conversations (id, title, summary, summary_up_to_index, created_at) "
+            "VALUES (?, ?, '', 0, ?)",
             (conv_id, title, now),
         )
         await db.commit()
@@ -70,7 +82,8 @@ async def get_conversation(conv_id: str) -> dict | None:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, title, created_at FROM conversations WHERE id = ?",
+            "SELECT id, title, summary, summary_up_to_index, created_at "
+            "FROM conversations WHERE id = ?",
             (conv_id,),
         )
         row = await cursor.fetchone()
@@ -87,6 +100,35 @@ async def get_conversation(conv_id: str) -> dict | None:
         messages = await cursor.fetchall()
         conv["messages"] = [dict(m) for m in messages]
         return conv
+    finally:
+        await db.close()
+
+
+async def get_conversation_summary(conv_id: str) -> tuple[str, int]:
+    """Get the summary and the index up to which it covers."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT summary, summary_up_to_index FROM conversations WHERE id = ?",
+            (conv_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return "", 0
+        return row["summary"] or "", row["summary_up_to_index"] or 0
+    finally:
+        await db.close()
+
+
+async def update_conversation_summary(conv_id: str, summary: str, up_to_index: int):
+    """Store the conversation summary and how many messages it covers."""
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE conversations SET summary = ?, summary_up_to_index = ? WHERE id = ?",
+            (summary, up_to_index, conv_id),
+        )
+        await db.commit()
     finally:
         await db.close()
 
@@ -135,5 +177,18 @@ async def get_messages(conversation_id: str) -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        await db.close()
+
+
+async def count_messages(conversation_id: str) -> int:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE conversation_id = ?",
+            (conversation_id,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"]
     finally:
         await db.close()

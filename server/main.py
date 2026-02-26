@@ -24,8 +24,17 @@ from db import (
     delete_conversation,
     add_message,
     get_messages,
+    count_messages,
+    get_conversation_summary,
+    update_conversation_summary,
 )
-from ollama_client import stream_chat, chat_no_stream, _build_ollama_messages
+from ollama_client import (
+    stream_chat,
+    chat_no_stream,
+    _build_ollama_messages,
+    generate_summary,
+    CONTEXT_WINDOW_SIZE,
+)
 from search import web_search
 
 
@@ -112,9 +121,12 @@ async def _chat_stream(conversation_id: str, user_message: str):
     4. Emit a done event and persist everything to the DB.
     """
 
-    # -- Build messages from conversation history -------------------------
+    # -- Build messages from conversation history with sliding window -----
     db_msgs = await get_messages(conversation_id)
-    ollama_messages = _build_ollama_messages(db_msgs, new_user_message=user_message)
+    summary, summary_up_to = await get_conversation_summary(conversation_id)
+    ollama_messages = _build_ollama_messages(
+        db_msgs, new_user_message=user_message, summary=summary
+    )
 
     # -- Save user message to DB ------------------------------------------
     await add_message(conversation_id, "user", user_message)
@@ -214,6 +226,27 @@ async def _chat_stream(conversation_id: str, user_message: str):
     # -- Save assistant response to DB ------------------------------------
     if collected_content:
         await add_message(conversation_id, "assistant", collected_content)
+
+    # -- Summarize older messages if conversation is getting long ----------
+    total_msgs = await count_messages(conversation_id)
+    # Trigger summarization when we have more than the window size
+    # and either no summary yet or summary is stale (10+ new messages since last summary)
+    if total_msgs > CONTEXT_WINDOW_SIZE:
+        msgs_since_summary = total_msgs - summary_up_to
+        if not summary or msgs_since_summary > CONTEXT_WINDOW_SIZE + 10:
+            all_msgs = await get_messages(conversation_id)
+            # Summarize everything except the last CONTEXT_WINDOW_SIZE messages
+            msgs_to_summarize = all_msgs[:-CONTEXT_WINDOW_SIZE]
+            if msgs_to_summarize:
+                logger.info(
+                    f"Generating summary for {len(msgs_to_summarize)} older messages "
+                    f"(total: {total_msgs})"
+                )
+                new_summary = await generate_summary(msgs_to_summarize)
+                if new_summary:
+                    await update_conversation_summary(
+                        conversation_id, new_summary, len(msgs_to_summarize)
+                    )
 
     # -- Done event -------------------------------------------------------
     yield _sse({"type": "done", "conversation_id": conversation_id})

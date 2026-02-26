@@ -1,12 +1,18 @@
 import os
 import json
+import logging
 from datetime import date
 
 import httpx
 from collections.abc import AsyncGenerator
 
+logger = logging.getLogger(__name__)
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:35b-a3b")
+
+# Sliding window: keep last N messages as full context
+CONTEXT_WINDOW_SIZE = 20
 
 SYSTEM_PROMPT = f"""You are a helpful AI assistant. Today's date is {date.today().strftime('%B %d, %Y')}.
 
@@ -38,14 +44,98 @@ TOOLS = [
 ]
 
 
-def _build_ollama_messages(db_messages: list[dict], new_user_message: str | None = None) -> list[dict]:
-    """Convert DB messages into the Ollama message format with system prompt."""
+def _build_ollama_messages(
+    db_messages: list[dict],
+    new_user_message: str | None = None,
+    summary: str = "",
+) -> list[dict]:
+    """
+    Build the Ollama messages array with sliding window context management.
+
+    If the conversation is short (<=CONTEXT_WINDOW_SIZE), send everything.
+    If it's long, prepend the summary of older messages and only include
+    the most recent CONTEXT_WINDOW_SIZE messages in full.
+    """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for msg in db_messages:
+
+    if summary and len(db_messages) > CONTEXT_WINDOW_SIZE:
+        # Inject summary of older context, then only recent messages
+        messages.append({
+            "role": "system",
+            "content": f"Summary of earlier conversation:\n{summary}",
+        })
+        recent = db_messages[-CONTEXT_WINDOW_SIZE:]
+        logger.info(
+            f"Using sliding window: {len(db_messages)} total msgs, "
+            f"sending summary + last {len(recent)}"
+        )
+    else:
+        # Conversation is short enough — send everything
+        recent = db_messages
+
+    for msg in recent:
         messages.append({"role": msg["role"], "content": msg["content"]})
+
     if new_user_message:
         messages.append({"role": "user", "content": new_user_message})
+
     return messages
+
+
+async def generate_summary(messages_to_summarize: list[dict]) -> str:
+    """
+    Ask Ollama to summarize a batch of conversation messages.
+    This runs as a quick non-streaming call with no tools.
+    """
+    if not messages_to_summarize:
+        return ""
+
+    # Build a transcript of the messages to summarize
+    transcript_lines = []
+    for msg in messages_to_summarize:
+        role = msg.get("role", "unknown").upper()
+        content = msg.get("content", "")
+        # Truncate very long messages (e.g. tool results) for the summary
+        if len(content) > 500:
+            content = content[:500] + "..."
+        transcript_lines.append(f"{role}: {content}")
+
+    transcript = "\n".join(transcript_lines)
+
+    summary_prompt = [
+        {
+            "role": "system",
+            "content": (
+                "You are a summarizer. Condense the following conversation into a brief "
+                "summary (3-5 sentences). Capture key topics discussed, any decisions made, "
+                "important facts mentioned, and user preferences expressed. "
+                "Be concise but preserve important context."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Summarize this conversation:\n\n{transcript}",
+        },
+    ]
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": summary_prompt,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            summary = data.get("message", {}).get("content", "")
+            logger.info(f"Generated summary ({len(summary)} chars) for {len(messages_to_summarize)} messages")
+            return summary
+    except Exception as e:
+        logger.error(f"Failed to generate summary: {e}")
+        return ""
 
 
 async def stream_chat(
