@@ -128,26 +128,25 @@ export default function ChatArea({
         }
       }
 
-      // Finalize: move streaming content into messages
-      setStreamingContent((prevContent) => {
-        if (prevContent) {
-          const assistantMessage: MessageType = {
-            id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            role: 'assistant',
-            content: prevContent,
-            created_at: new Date().toISOString(),
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-        }
-        return '';
-      });
-
+      // Finalize: reload messages from server to get proper IDs
+      setStreamingContent('');
       setIsStreaming(false);
       setIsLoading(false);
       setIsThinking(false);
       setThinkingContent('');
       setToolStatus(null);
       abortControllerRef.current = null;
+
+      // Reload conversation from DB to get all messages with real IDs
+      const reloadId = currentConvId;
+      if (reloadId) {
+        try {
+          const data = await fetchConversation(reloadId);
+          setMessages(data.messages);
+        } catch {
+          // keep local state if reload fails
+        }
+      }
     },
     [conversationId, onConversationCreated]
   );
