@@ -1,10 +1,18 @@
 import os
 import json
+from datetime import date
+
 import httpx
 from collections.abc import AsyncGenerator
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:35b-a3b")
+
+SYSTEM_PROMPT = f"""You are a helpful AI assistant. Today's date is {date.today().strftime('%B %d, %Y')}.
+
+When you need current or recent information, use the web_search tool. Always include the current year ({date.today().year}) in your search queries for time-sensitive topics.
+
+When presenting information from web searches, cite your sources and be clear about what is current vs. historical data."""
 
 TOOLS = [
     {
@@ -31,8 +39,8 @@ TOOLS = [
 
 
 def _build_ollama_messages(db_messages: list[dict], new_user_message: str | None = None) -> list[dict]:
-    """Convert DB messages into the Ollama message format."""
-    messages = []
+    """Convert DB messages into the Ollama message format with system prompt."""
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in db_messages:
         messages.append({"role": msg["role"], "content": msg["content"]})
     if new_user_message:
