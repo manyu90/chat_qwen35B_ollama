@@ -23,6 +23,8 @@ export default function ChatArea({
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Track if we're mid-stream so the useEffect doesn't clobber state
+  const isStreamingRef = useRef(false);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -30,6 +32,8 @@ export default function ChatArea({
       setMessages([]);
       return;
     }
+    // Don't reload while actively streaming — we'll reload when done
+    if (isStreamingRef.current) return;
 
     let cancelled = false;
     (async () => {
@@ -61,10 +65,11 @@ export default function ChatArea({
       setToolStatus(null);
       setThinkingContent('');
       setIsThinking(false);
+      isStreamingRef.current = true;
 
-      // Add user message to local state immediately
+      // Add user message to local state immediately for instant feedback
       const userMessage: MessageType = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        id: crypto.randomUUID(),
         role: 'user',
         content: text,
         created_at: new Date().toISOString(),
@@ -128,7 +133,7 @@ export default function ChatArea({
         }
       }
 
-      // Finalize: reload messages from server to get proper IDs
+      // Finalize
       setStreamingContent('');
       setIsStreaming(false);
       setIsLoading(false);
@@ -136,8 +141,10 @@ export default function ChatArea({
       setThinkingContent('');
       setToolStatus(null);
       abortControllerRef.current = null;
+      isStreamingRef.current = false;
 
-      // Reload conversation from DB to get all messages with real IDs
+      // Reload full conversation from DB — this replaces all temp messages
+      // with proper server-generated UUIDs
       const reloadId = currentConvId;
       if (reloadId) {
         try {
@@ -178,8 +185,8 @@ export default function ChatArea({
   return (
     <main className="chat-area">
       <div className="messages-container">
-        {messages.map((msg) => (
-          <Message key={msg.id} role={msg.role} content={msg.content} />
+        {messages.map((msg, index) => (
+          <Message key={msg.id || `fallback-${index}`} role={msg.role} content={msg.content} />
         ))}
 
         {isLoading && !streamingContent && !isThinking && (
