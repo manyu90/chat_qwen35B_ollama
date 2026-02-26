@@ -1,0 +1,21 @@
+# Dependencies
+client/node_modules/
+server/__pycache__/
+
+# Database
+server/chat.db
+server/chat.db-wal
+server/chat.db-shm
+
+# Environment
+server/.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Build
+client/dist/
