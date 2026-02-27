@@ -150,12 +150,11 @@ jobs:
       - name: Publish badges to badges branch
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          cd server
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Copy badges to temp location
-          cp -r badges /tmp/badges
+          cp -r server/badges /tmp/badges
 
           # Switch to badges branch (create if needed)
           git fetch origin badges 2>/dev/null || true
@@ -170,7 +169,7 @@ jobs:
           cp -r /tmp/badges/* .
           git add tests.json coverage.json sandbox-coverage.json
           git diff --cached --quiet || git commit -m "Update badges [skip ci]"
-          git push origin badges
+          git push origin badges --force
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
