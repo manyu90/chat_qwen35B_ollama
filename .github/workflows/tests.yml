@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          cd server
+          pip install -r requirements-test.txt
+
+      - name: Run tests with coverage
+        run: |
+          cd server
+          python -m pytest tests/ -v --cov=code_executor --cov=ollama_client --cov=main --cov-report=term-missing --cov-report=xml --cov-fail-under=50
+
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v4
+        with:
+          file: server/coverage.xml
+          fail_ci_if_error: false

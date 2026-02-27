@@ -1,0 +1,12 @@
+-r requirements.txt
+pytest
+pytest-cov
+pytest-asyncio
+numpy
+pandas
+matplotlib
+seaborn
+scipy
+scikit-learn
+yfinance
+requests
