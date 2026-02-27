@@ -18,7 +18,9 @@ SYSTEM_PROMPT = f"""You are a helpful AI assistant. Today's date is {date.today(
 
 When you need current or recent information, use the web_search tool. Always include the current year ({date.today().year}) in your search queries for time-sensitive topics.
 
-When presenting information from web searches, cite your sources and be clear about what is current vs. historical data."""
+When presenting information from web searches, cite your sources and be clear about what is current vs. historical data.
+
+You can run Python code using the run_python tool for calculations, data analysis, plots, and fetching data. Always call plt.show() for plots."""
 
 TOOLS = [
     {
@@ -40,7 +42,31 @@ TOOLS = [
                 "required": ["query"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": (
+                "Execute Python code in a sandboxed environment. Use this for "
+                "calculations, data analysis, plotting, and fetching data. "
+                "Available packages: numpy, pandas, matplotlib, seaborn, scipy, "
+                "scikit-learn, yfinance, requests, and standard library modules "
+                "(math, statistics, datetime, json, csv, collections, itertools, re, random). "
+                "For plots, use matplotlib and call plt.show() to display them."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "The Python code to execute",
+                    }
+                },
+                "required": ["code"],
+            },
+        },
+    },
 ]
 
 
@@ -177,10 +203,14 @@ async def stream_chat(
 async def chat_no_stream(
     messages: list[dict],
     include_tools: bool = True,
+    max_retries: int = 5,
 ) -> dict:
     """
     Non-streaming chat call to Ollama. Returns the full response object.
     Used for the initial tool-call detection pass.
+
+    Retries on 500 errors because Qwen sometimes generates malformed tool
+    call JSON that Ollama fails to parse internally.
     """
     payload = {
         "model": OLLAMA_MODEL,
@@ -190,6 +220,30 @@ async def chat_no_stream(
     if include_tools:
         payload["tools"] = TOOLS
 
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json=payload,
+            )
+            if response.status_code == 200:
+                if attempt > 1:
+                    logger.info(f"Ollama succeeded on attempt {attempt}/{max_retries}")
+                return response.json()
+
+            last_error = response.text
+            logger.warning(
+                f"Ollama returned {response.status_code} on attempt {attempt}/{max_retries}: {response.text}"
+            )
+
+    # All retries exhausted — fall back to a no-tools call so the user
+    # still gets a response instead of an error
+    logger.error(
+        f"Ollama failed all {max_retries} retries with tools; "
+        f"falling back to no-tools call"
+    )
+    payload.pop("tools", None)
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
         response = await client.post(
             f"{OLLAMA_BASE_URL}/api/chat",

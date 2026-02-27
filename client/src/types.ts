@@ -36,4 +36,13 @@ export interface SSEError {
   content: string;
 }
 
-export type SSEEvent = SSEToken | SSEThinking | SSEToolStatus | SSEDone | SSEError;
+export interface SSECodeOutput {
+  type: 'code_output';
+  code: string;
+  stdout: string;
+  stderr: string;
+  images: string[];
+  success: boolean;
+}
+
+export type SSEEvent = SSEToken | SSEThinking | SSEToolStatus | SSEDone | SSEError | SSECodeOutput;

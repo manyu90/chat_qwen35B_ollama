@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Message from './Message';
 import MessageInput from './MessageInput';
-import type { Message as MessageType, SSEEvent } from '../types';
+import CodeOutput from './CodeOutput';
+import type { Message as MessageType, SSEEvent, SSECodeOutput } from '../types';
 import { streamChat, fetchConversation } from '../api';
 
 interface ChatAreaProps {
@@ -20,6 +21,7 @@ export default function ChatArea({
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
+  const [codeOutputs, setCodeOutputs] = useState<SSECodeOutput[]>([]);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -63,6 +65,7 @@ export default function ChatArea({
     async (text: string) => {
       setError(null);
       setToolStatus(null);
+      setCodeOutputs([]);
       setThinkingContent('');
       setIsThinking(false);
       isStreamingRef.current = true;
@@ -111,6 +114,11 @@ export default function ChatArea({
                 setToolStatus(event.content);
                 break;
 
+              case 'code_output':
+                setToolStatus(null);
+                setCodeOutputs((prev) => [...prev, event]);
+                break;
+
               case 'done':
                 if (!currentConvId && event.conversation_id) {
                   currentConvId = event.conversation_id;
@@ -133,7 +141,7 @@ export default function ChatArea({
         }
       }
 
-      // Finalize
+      // Finalize — keep codeOutputs so plots persist until next message
       setStreamingContent('');
       setIsStreaming(false);
       setIsLoading(false);
@@ -246,6 +254,10 @@ export default function ChatArea({
             isStreaming={true}
           />
         )}
+
+        {codeOutputs.map((co, i) => (
+          <CodeOutput key={`code-output-${i}`} output={co} />
+        ))}
 
         {toolStatus && (
           <div className="tool-status">

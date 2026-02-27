@@ -598,6 +598,146 @@ body {
   margin-top: 10px;
 }
 
+/* ===== Code Output Block ===== */
+.code-output-block {
+  max-width: 768px;
+  margin: 8px auto;
+  padding: 0 24px;
+  animation: thinkingFadeIn 0.3s ease;
+}
+
+.code-output-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+.code-output-header:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.code-output-chevron {
+  font-size: 10px;
+  color: #9a9b9f;
+  transition: transform 0.2s;
+}
+.code-output-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.code-output-label {
+  flex: 1;
+  font-size: 13px;
+  color: #c5c5d2;
+}
+
+.code-output-status {
+  font-size: 14px;
+  font-weight: 600;
+}
+.code-output-status.success {
+  color: #19c37d;
+}
+.code-output-status.failure {
+  color: #ef4444;
+}
+
+.code-output-code {
+  background: #1a1a2e;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.code-output-code pre {
+  margin: 0;
+}
+.code-output-code code {
+  font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-output-stdout,
+.code-output-stderr {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 14px;
+}
+
+.code-output-stdout {
+  background: rgba(25, 195, 125, 0.05);
+}
+.code-output-stderr {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.code-output-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.code-output-stdout .code-output-section-label {
+  color: #19c37d;
+}
+.code-output-stderr .code-output-section-label {
+  color: #ef4444;
+}
+
+.code-output-stdout pre,
+.code-output-stderr pre {
+  margin: 0;
+  font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.code-output-stdout pre {
+  color: #d1d5db;
+}
+.code-output-stderr pre {
+  color: #fca5a5;
+}
+
+.code-output-images {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.code-output-image {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Close bottom border radius when images section is absent */
+.code-output-block:not(:has(.code-output-images)) .code-output-stdout:last-child,
+.code-output-block:not(:has(.code-output-images)) .code-output-stderr:last-child,
+.code-output-block:not(:has(.code-output-images)) .code-output-header:last-child,
+.code-output-block:not(:has(.code-output-images)) .code-output-code:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .sidebar-toggle {

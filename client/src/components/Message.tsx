@@ -58,6 +58,16 @@ export default function Message({ role, content, isStreaming }: MessageProps) {
                     </code>
                   );
                 },
+                img({ src, alt, ...props }) {
+                  return (
+                    <img
+                      src={src}
+                      alt={alt || 'Generated image'}
+                      style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0' }}
+                      {...props}
+                    />
+                  );
+                },
               }}
             >
               {content}

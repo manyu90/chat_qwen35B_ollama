@@ -14,6 +14,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from db import (
@@ -36,6 +37,7 @@ from ollama_client import (
     CONTEXT_WINDOW_SIZE,
 )
 from search import web_search
+from code_executor import execute_code, cleanup_old_outputs, OUTPUT_BASE_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +47,8 @@ from search import web_search
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)
+    cleanup_old_outputs()
     yield
 
 
@@ -77,10 +81,16 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-async def _execute_tool_calls(tool_calls: list[dict]) -> list[dict]:
+async def _execute_tool_calls(
+    tool_calls: list[dict],
+    code_results: list[dict] | None = None,
+) -> list[dict]:
     """
     Execute each tool call and return a list of tool-result messages
     suitable for appending to the Ollama messages array.
+
+    If code_results list is provided, code execution outputs are appended
+    to it for SSE event emission.
     """
     results: list[dict] = []
     for tc in tool_calls:
@@ -99,6 +109,42 @@ async def _execute_tool_calls(tool_calls: list[dict]) -> list[dict]:
             search_result = await web_search(query)
             logger.info(f"Search result length: {len(search_result)}")
             results.append({"role": "tool", "content": search_result})
+
+        elif name == "run_python":
+            code = args.get("code", "")
+            logger.info(f"Executing run_python ({len(code)} chars)")
+            exec_result = execute_code(code)
+            logger.info(
+                f"Code execution: success={exec_result['success']}, "
+                f"stdout={len(exec_result['stdout'])} chars, "
+                f"images={len(exec_result['images'])}"
+            )
+
+            # Build tool result content for Ollama
+            parts = []
+            if exec_result["errors"]:
+                parts.append("VALIDATION ERRORS:\n" + "\n".join(exec_result["errors"]))
+            if exec_result["stdout"]:
+                parts.append("STDOUT:\n" + exec_result["stdout"])
+            if exec_result["stderr"]:
+                parts.append("STDERR:\n" + exec_result["stderr"])
+            if exec_result["images"]:
+                parts.append("IMAGES:\n" + "\n".join(exec_result["images"]))
+            if not parts:
+                parts.append("Code executed successfully with no output.")
+
+            results.append({"role": "tool", "content": "\n\n".join(parts)})
+
+            # Store for SSE emission
+            if code_results is not None:
+                code_results.append({
+                    "code": code,
+                    "stdout": exec_result["stdout"],
+                    "stderr": exec_result["stderr"],
+                    "images": exec_result["images"],
+                    "success": exec_result["success"],
+                    "errors": exec_result["errors"],
+                })
         else:
             results.append({"role": "tool", "content": f"Unknown tool: {name}"})
 
@@ -162,14 +208,33 @@ async def _chat_stream(conversation_id: str, user_message: str):
         for tc in tool_calls:
             fn_name = tc.get("function", {}).get("name", "unknown")
             fn_args = tc.get("function", {}).get("arguments", {})
-            query = fn_args.get("query", "") if isinstance(fn_args, dict) else ""
-            yield _sse({
-                "type": "tool_status",
-                "content": f"Searching the web for: {query}" if fn_name == "web_search" else f"Calling tool: {fn_name}",
-            })
+            if isinstance(fn_args, str):
+                try:
+                    fn_args = json.loads(fn_args)
+                except json.JSONDecodeError:
+                    fn_args = {}
+            if fn_name == "web_search":
+                query = fn_args.get("query", "")
+                yield _sse({"type": "tool_status", "content": f"Searching the web for: {query}"})
+            elif fn_name == "run_python":
+                yield _sse({"type": "tool_status", "content": "Running Python code..."})
+            else:
+                yield _sse({"type": "tool_status", "content": f"Calling tool: {fn_name}"})
 
         # Execute the tool calls
-        tool_result_messages = await _execute_tool_calls(tool_calls)
+        code_results: list[dict] = []
+        tool_result_messages = await _execute_tool_calls(tool_calls, code_results)
+
+        # Emit code_output SSE events
+        for cr in code_results:
+            yield _sse({
+                "type": "code_output",
+                "code": cr["code"],
+                "stdout": cr["stdout"],
+                "stderr": cr["stderr"],
+                "images": cr["images"],
+                "success": cr["success"],
+            })
 
         # Build updated message list for the follow-up call
         follow_up_messages = list(ollama_messages)
@@ -308,6 +373,13 @@ async def conversation_delete(conv_id: str):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"ok": True}
 
+
+# ---------------------------------------------------------------------------
+# Static files for code execution output (plots, images)
+# ---------------------------------------------------------------------------
+
+os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)
+app.mount("/api/code-output", StaticFiles(directory=OUTPUT_BASE_DIR), name="code-output")
 
 # ---------------------------------------------------------------------------
 # Entrypoint
