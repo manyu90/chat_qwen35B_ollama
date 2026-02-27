@@ -1,6 +1,9 @@
 # Local AI Chat with Ollama (Qwen 3.5 35B)
 
-[![Tests](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml/badge.svg)](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml)
+[![CI](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml/badge.svg)](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml)
+![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/manyu90/chat_qwen35B_ollama/badges/tests.json)
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/manyu90/chat_qwen35B_ollama/badges/coverage.json)
+![Sandbox Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/manyu90/chat_qwen35B_ollama/badges/sandbox-coverage.json)
 
 A fully local AI chat application powered by Ollama running Qwen 3.5 35B, with a ChatGPT-style interface, persistent conversation memory, web search, and sandboxed Python code execution. Zero cloud LLM costs — all inference runs on your machine.
 

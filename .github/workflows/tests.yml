@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,9 +27,150 @@ jobs:
           pip install -r requirements-test.txt
 
       - name: Run tests with coverage
+        id: tests
         run: |
           cd server
-          python -m pytest tests/ -v --cov=code_executor --cov=ollama_client --cov=main --cov-report=term-missing --cov-report=xml --cov-fail-under=40
+          python -m pytest tests/ -v \
+            --tb=short \
+            --junitxml=report.xml \
+            --cov=code_executor --cov=ollama_client --cov=main \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=40 2>&1 | tee pytest_output.txt
+
+      - name: Generate badge data
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd server
+          mkdir -p badges
+
+          # Parse test results from JUnit XML
+          TOTAL=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('report.xml')
+          root = tree.getroot()
+          ts = root.find('testsuite') or root
+          print(ts.get('tests', '0'))
+          ")
+          FAILURES=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('report.xml')
+          root = tree.getroot()
+          ts = root.find('testsuite') or root
+          print(ts.get('failures', '0'))
+          ")
+          ERRORS=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('report.xml')
+          root = tree.getroot()
+          ts = root.find('testsuite') or root
+          print(ts.get('errors', '0'))
+          ")
+          PASSED=$((TOTAL - FAILURES - ERRORS))
+
+          if [ "$FAILURES" = "0" ] && [ "$ERRORS" = "0" ]; then
+            COLOR="brightgreen"
+            MSG="${PASSED}/${TOTAL} passed"
+          else
+            COLOR="red"
+            MSG="${PASSED}/${TOTAL} passed, ${FAILURES} failed"
+          fi
+
+          cat > badges/tests.json << BADGE_EOF
+          {
+            "schemaVersion": 1,
+            "label": "tests",
+            "message": "${MSG}",
+            "color": "${COLOR}"
+          }
+          BADGE_EOF
+
+          # Parse coverage from XML
+          COV_LINE=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          rate = float(root.get('line-rate', '0'))
+          print(f'{rate * 100:.0f}')
+          ")
+
+          if [ "$COV_LINE" -ge 80 ]; then
+            COV_COLOR="brightgreen"
+          elif [ "$COV_LINE" -ge 60 ]; then
+            COV_COLOR="green"
+          elif [ "$COV_LINE" -ge 40 ]; then
+            COV_COLOR="yellow"
+          else
+            COV_COLOR="red"
+          fi
+
+          cat > badges/coverage.json << BADGE_EOF
+          {
+            "schemaVersion": 1,
+            "label": "coverage",
+            "message": "${COV_LINE}%",
+            "color": "${COV_COLOR}"
+          }
+          BADGE_EOF
+
+          # Parse per-module coverage
+          CODE_EXEC_COV=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          for pkg in tree.findall('.//package'):
+              for cls in pkg.findall('.//class'):
+                  if 'code_executor' in cls.get('filename', ''):
+                      print(f'{float(cls.get(\"line-rate\", \"0\")) * 100:.0f}')
+                      break
+          " | head -1)
+
+          if [ -z "$CODE_EXEC_COV" ]; then CODE_EXEC_COV="0"; fi
+
+          if [ "$CODE_EXEC_COV" -ge 80 ]; then
+            CE_COLOR="brightgreen"
+          elif [ "$CODE_EXEC_COV" -ge 60 ]; then
+            CE_COLOR="green"
+          else
+            CE_COLOR="yellow"
+          fi
+
+          cat > badges/sandbox-coverage.json << BADGE_EOF
+          {
+            "schemaVersion": 1,
+            "label": "sandbox coverage",
+            "message": "${CODE_EXEC_COV}%",
+            "color": "${CE_COLOR}"
+          }
+          BADGE_EOF
+
+          echo "Tests: ${MSG}"
+          echo "Coverage: ${COV_LINE}%"
+          echo "Sandbox coverage: ${CODE_EXEC_COV}%"
+
+      - name: Publish badges to badges branch
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd server
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Copy badges to temp location
+          cp -r badges /tmp/badges
+
+          # Switch to badges branch (create if needed)
+          git fetch origin badges 2>/dev/null || true
+          if git rev-parse --verify origin/badges >/dev/null 2>&1; then
+            git checkout badges
+          else
+            git checkout --orphan badges
+            git rm -rf . 2>/dev/null || true
+          fi
+
+          # Copy badges back and commit
+          cp -r /tmp/badges/* .
+          git add tests.json coverage.json sandbox-coverage.json
+          git diff --cached --quiet || git commit -m "Update badges [skip ci]"
+          git push origin badges
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
