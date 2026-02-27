@@ -1,6 +1,6 @@
 # Local AI Chat with Ollama (Qwen 3.5 35B)
 
-A fully local AI chat application powered by Ollama running Qwen 3.5 35B, with a ChatGPT-style interface, persistent conversation memory, and web search capabilities. Zero cloud LLM costs — all inference runs on your machine.
+A fully local AI chat application powered by Ollama running Qwen 3.5 35B, with a ChatGPT-style interface, persistent conversation memory, web search, and sandboxed Python code execution. Zero cloud LLM costs — all inference runs on your machine.
 
 ![Chat Interface](assets/chat-screenshot.png)
 
@@ -95,6 +95,8 @@ Browser (React)  <-->  FastAPI Backend  <-->  Ollama (localhost:11434)
                             |      |
                             |      +--> trafilatura (content extraction)
                             |
+                            +--> Python subprocess (sandboxed code execution)
+                            |
                             +--> SQLite (conversation memory)
 ```
 
@@ -114,6 +116,24 @@ When the model decides it needs current information, it calls the `web_search` t
 4. This context is fed back to the local Qwen model, which summarizes and answers based on **actual article content**, not just search snippets
 
 This approach gives the local model access to real, current information while keeping the entire pipeline local (only the search query hits Serper's API — the LLM summarization is fully local).
+
+### Sandboxed Python Code Execution
+
+The model can write and run Python code locally via the `run_python` tool — useful for calculations, data analysis, fetching financial data, and generating plots.
+
+**How the sandbox works:**
+
+1. **AST validation (before execution)** — the code is parsed into an Abstract Syntax Tree and walked to enforce a security policy: imports are checked against a whitelist (numpy, pandas, matplotlib, yfinance, scipy, scikit-learn, etc.), and dangerous builtins (`exec`, `eval`, `open`, `__import__`) and dunder attributes (`__subclasses__`, `__globals__`) are blocked. Code that fails validation never runs.
+2. **Subprocess isolation (during execution)** — validated code runs in a separate Python process via `subprocess.run()` with a 30-second timeout, closed stdin, and capped stdout/stderr. Each execution gets its own temporary working directory that is cleaned up afterward.
+3. **Plot capture** — matplotlib's `plt.show()` is patched to save figures as PNGs to `server/code_output/<uuid>/`, which are served as static files and displayed inline in the chat.
+
+**Available packages:** numpy, pandas, matplotlib, seaborn, scipy, scikit-learn, yfinance, requests, plus standard library modules (math, statistics, datetime, json, csv, collections, itertools, re, random).
+
+Install them in the conda environment:
+```bash
+conda activate local-chat
+pip install numpy pandas matplotlib seaborn scipy scikit-learn yfinance requests
+```
 
 ### Thinking Tokens
 
@@ -139,6 +159,7 @@ Qwen 3.5 supports chain-of-thought reasoning. The model's internal "thinking" is
 │       └── components/
 │           ├── ChatArea.tsx      # Messages + streaming handler
 │           ├── Message.tsx       # Markdown message rendering
+│           ├── CodeOutput.tsx     # Code execution results + plots
 │           ├── MessageInput.tsx  # Auto-resizing input
 │           └── Sidebar.tsx       # Conversation list
 │
@@ -147,6 +168,7 @@ Qwen 3.5 supports chain-of-thought reasoning. The model's internal "thinking" is
 │   ├── db.py                # SQLite CRUD operations
 │   ├── ollama_client.py     # Ollama API client
 │   ├── search.py            # Serper + trafilatura web search
+│   ├── code_executor.py     # Sandboxed Python execution engine
 │   └── .env.example         # Environment template
 ```
 
