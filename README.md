@@ -1,5 +1,7 @@
 # Local AI Chat with Ollama (Qwen 3.5 35B)
 
+[![Tests](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml/badge.svg)](https://github.com/manyu90/chat_qwen35B_ollama/actions/workflows/tests.yml)
+
 A fully local AI chat application powered by Ollama running Qwen 3.5 35B, with a ChatGPT-style interface, persistent conversation memory, web search, and sandboxed Python code execution. Zero cloud LLM costs — all inference runs on your machine.
 
 ![Chat Interface](assets/chat-screenshot.png)
@@ -146,6 +148,31 @@ Qwen 3.5 supports chain-of-thought reasoning. The model's internal "thinking" is
 - **LLM**: Ollama with Qwen 3.5 35B (Q4_K_M)
 - **Search**: Serper API + trafilatura for content extraction
 - **Streaming**: Server-Sent Events (SSE) for real-time token streaming
+
+## Testing
+
+74 backend tests run on every push/PR via GitHub Actions.
+
+```bash
+# Run tests locally
+cd server
+conda activate local-chat
+pip install -r requirements-test.txt
+python -m pytest tests/ -v
+
+# Run with coverage report
+python -m pytest tests/ --cov=code_executor --cov=ollama_client --cov=main --cov-report=term-missing
+```
+
+**Test coverage by module:**
+
+| Module | Coverage | What's tested |
+|--------|----------|---------------|
+| `code_executor.py` | 93% | AST validation (allowed/blocked imports, builtins, dunders), subprocess execution, stdout/stderr capture, timeout enforcement, matplotlib plot generation, temp directory cleanup |
+| `ollama_client.py` | 33% | Tool definitions, system prompt content, sliding window message builder |
+| `main.py` | 20% | SSE event formatting |
+
+The lower coverage on `main.py` and `ollama_client.py` is expected — their async streaming and tool orchestration code requires a running Ollama server and is tested manually.
 
 ## Project Structure
 
